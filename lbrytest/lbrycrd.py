@@ -25,22 +25,13 @@ class LbrycrdProcess(ProcessProtocol):
             self.running.callback(True)
 
     def processEnded(self, reason):
-        print('process ended')
-        self.stopped.callback(reason)
-
-    def processExited(self, reason):
-        print('process exited')
-        self.stopped.callback(reason)
+        self.stopped.callback(True)
 
     def stop(self):
-        print('stop()')
         if self.transport.pid:
-            print('kill()')
-            os.kill(self.transport.pid, signal.SIGHUP)
-            print('kill finished')
+            os.kill(self.transport.pid, signal.SIGTERM)
             return self.stopped
-        print('already stopped')
-        return defer.succeed(0)
+        return defer.succeed(True)
 
 
 class Lbrycrd:
@@ -105,11 +96,12 @@ class Lbrycrd:
                     '-regtest', 'generate', str(with_blocks),
                 ]
             )
-        print('started...')
-        defer.returnValue(True)
 
-    def stop(self):
-        return self.process.stop()
+    @defer.inlineCallbacks
+    def stop(self, cleanup=True):
+        yield self.process.stop()
+        if cleanup:
+            shutil.rmtree(self.data_path, ignore_errors=True)
 
 
 if __name__ == "__main__":

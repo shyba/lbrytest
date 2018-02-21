@@ -1,20 +1,50 @@
 from twisted.trial import unittest
-from lbrycrd import Lbrycrd
+from twisted.internet import defer
+from lbrytest.wrapper import Lbrycrd, LbryumServer
 
 
-class IntegrationTestCase(unittest.TestCase):
+class LbrycrdTestCase(unittest.TestCase):
 
-    #@classmethod
-    #def setUpClass(cls):
-    #    lbrycrd = Lbrycrd()
-    #    lbrycrd.ensure()
-    #    cls.lbrycrd = lbrycrd
-    #    cls.setUpLbrycrd()
+    VERBOSE = False
 
-    @classmethod
-    def setUpLbrycrd(cls):
-        """ Setup blockchain to be used by tests. """
+    @defer.inlineCallbacks
+    def setUp(self):
+        self.lbrycrd = Lbrycrd(verbose=self.VERBOSE)
+        yield self.lbrycrd.start()
+        yield self.lbrycrd.generate(100)
 
-    #@classmethod
-    #def tearDownClass(cls):
-    #    cls.lbrycrd.teardown()
+    @defer.inlineCallbacks
+    def tearDown(self):
+        yield self.lbrycrd.stop()
+
+
+class LbryumServerTestCase(LbrycrdTestCase):
+
+    @defer.inlineCallbacks
+    def setUp(self):
+        yield super(LbryumServerTestCase, self).setUp()
+        self.lbryumserver = LbryumServer(self.lbrycrd, verbose=self.VERBOSE)
+        self.lbryumserver.start()
+
+    @defer.inlineCallbacks
+    def tearDown(self):
+        try:
+            self.lbryumserver.stop()
+        finally:
+            yield super(LbryumServerTestCase, self).tearDown()
+
+
+class LbryumTestCase(LbrycrdTestCase):
+
+    @defer.inlineCallbacks
+    def setUp(self):
+        yield super(LbryumTestCase, self).setUp()
+        self.lbryumserver = LbryumServer(self.lbrycrd, verbose=self.VERBOSE)
+        self.lbryumserver.start()
+
+    @defer.inlineCallbacks
+    def tearDown(self):
+        try:
+            self.lbryumserver.stop()
+        finally:
+            yield super(LbryumTestCase, self).tearDown()

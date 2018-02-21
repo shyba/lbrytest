@@ -1,3 +1,4 @@
+from __future__ import print_function
 import os
 import signal
 import shutil
@@ -8,21 +9,60 @@ import requests
 from twisted.internet import reactor, defer, utils
 from twisted.internet.protocol import ProcessProtocol
 
+from lbryumserver.main import start_server, stop_server, create_config
+
+
+class LbryumServer:
+
+    def __init__(self, lbrycrd, verbose=False):
+        self.lbrycrd = lbrycrd
+        self.data_path = None
+        self.verbose = verbose
+
+    @property
+    def lbryum_conf(self):
+        return os.path.join(self.data_path, 'lbryum.conf')
+
+    def start(self):
+        self.data_path = tempfile.mkdtemp()
+        with open(self.lbryum_conf, 'w') as conf:
+            conf.write(
+                '[network]\n'
+                'type=lbrycrd_regtest\n'
+                '[server]\n'
+                'logfile={}\n'
+                '[leveldb]\n'
+                'path={}\n'
+                .format(
+                   os.path.join(self.data_path, 'lbryum.log'),
+                   os.path.join(self.data_path, 'lbryum_db')
+                )
+            )
+        config = create_config(
+            filename=self.lbryum_conf,
+            lbrycrdd_dir=self.lbrycrd.data_path
+        )
+        start_server(config)
+
+    def stop(self, cleanup=True):
+        stop_server()
+        if cleanup:
+            shutil.rmtree(self.data_path, ignore_errors=True)
+
 
 class LbrycrdProcess(ProcessProtocol):
 
-    def __init__(self):
-        self.running = defer.Deferred()
+    def __init__(self, verbose=False):
+        self.ready = defer.Deferred()
         self.stopped = defer.Deferred()
-        self.errored = False
+        self.verbose = verbose
 
     def outReceived(self, data):
-        print(data)
+        self.verbose and print(data)
         if 'Error:' in data:
-            self.errored = True
-            self.running.callback(False)
+            self.ready.callback(False)
         if 'Done loading' in data:
-            self.running.callback(True)
+            self.ready.callback(True)
 
     def processEnded(self, reason):
         self.stopped.callback(True)
@@ -36,7 +76,7 @@ class LbrycrdProcess(ProcessProtocol):
 
 class Lbrycrd:
 
-    def __init__(self, parent_path=None, bin_path=None):
+    def __init__(self, parent_path=None, bin_path=None, verbose=False):
         self.parent_data_path = parent_path
         self.data_path = None
         self.project_dir = os.path.dirname(os.path.dirname(__file__))
@@ -45,6 +85,8 @@ class Lbrycrd:
         self.zip_path = os.path.join(self.lbrycrd_dir, self.lbrycrd_zip)
         self.lbrycrd_cli_path = os.path.join(self.lbrycrd_dir, 'lbrycrd-cli')
         self.lbrycrdd_path = os.path.join(self.lbrycrd_dir, 'lbrycrdd')
+        self.process = None
+        self.verbose = verbose
 
     @property
     def exists(self):
@@ -74,13 +116,22 @@ class Lbrycrd:
     def ensure(self):
         return self.exists or self.download()
 
+    @property
+    def lbrycrd_conf(self):
+        return os.path.join(self.data_path, 'lbrycrd.conf')
+
     @defer.inlineCallbacks
-    def start(self, with_blocks=101):
+    def start(self):
         self.ensure()
         self.data_path = tempfile.mkdtemp()
+        with open(self.lbrycrd_conf, 'w') as conf:
+            conf.write(
+                'rpcuser=rpcuser\n'
+                'rpcpassword=rpcpassword\n'
+            )
         if self.parent_data_path and os.path.exists(self.parent_data_path):
             shutil.copytree(self.parent_data_path, self.data_path)
-        self.process = LbrycrdProcess()
+        self.process = LbrycrdProcess(self.verbose)
         reactor.spawnProcess(
             self.process, self.lbrycrdd_path, [
                 self.lbrycrdd_path,
@@ -88,21 +139,25 @@ class Lbrycrd:
                 '-printtoconsole', '-regtest', '-server',
             ]
         )
-        yield self.process.running
-        if with_blocks:
-            yield utils.getProcessValue(
-                self.lbrycrd_cli_path, [
-                    '-datadir={}'.format(self.data_path),
-                    '-regtest', 'generate', str(with_blocks),
-                ]
-            )
+        yield self.process.ready
 
     @defer.inlineCallbacks
     def stop(self, cleanup=True):
-        yield self.process.stop()
-        if cleanup:
-            shutil.rmtree(self.data_path, ignore_errors=True)
+        try:
+            yield self.process.stop()
+        finally:
+            if cleanup:
+                shutil.rmtree(self.data_path, ignore_errors=True)
 
+    def _cli_cmnd(self, *args):
+        return utils.getProcessValue(
+            self.lbrycrd_cli_path, [
+                '-datadir={}'.format(self.data_path), '-regtest',
+            ] + list(args)
+        )
 
-if __name__ == "__main__":
-    Lbrycrd().ensure()
+    def generate(self, blocks):
+        return self._cli_cmnd('generate', str(blocks))
+
+    def sendtoaddress(self, address, credits):
+        return self._cli_cmnd('sendtoaddress', address, str(credits))

@@ -3,6 +3,11 @@ from lbrytest.case import IntegrationTestCase
 from twisted.internet import defer, threads
 
 import logging
+log = logging.getLogger()
+handler = logging.StreamHandler()
+handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-8s %(name)s:%(lineno)d: %(message)s"))
+log.addHandler(handler)
+log.setLevel(logging.DEBUG)
 logging.getLogger('lbrynet').setLevel(logging.DEBUG)
 logging.getLogger('lbryum').setLevel(logging.DEBUG)
 

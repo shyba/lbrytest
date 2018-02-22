@@ -174,6 +174,9 @@ class Lbrycrd:
             shutil.copyfileobj(r.raw, f)
         with zipfile.ZipFile(self.zip_path) as zf:
             zf.extractall(self.lbrycrd_dir)
+        # zipfile bug https://bugs.python.org/issue15795
+        os.chmod(self.lbrycrd_cli_path, 0o755)
+        os.chmod(self.lbrycrdd_path, 0o755)
         return True
 
     def ensure(self):

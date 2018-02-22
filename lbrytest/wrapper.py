@@ -224,6 +224,8 @@ class Lbrycrd:
             self.lbrycrd_cli_path, cmnd_args
         )
         self.verbose and print(out)
+        if err:
+            print(err)
         defer.returnValue(value)
 
     def generate(self, blocks):
@@ -231,3 +233,9 @@ class Lbrycrd:
 
     def sendtoaddress(self, address, credits):
         return self._cli_cmnd('sendtoaddress', address, str(credits))
+
+    def decoderawtransaction(self, tx):
+        return self._cli_cmnd('decoderawtransaction', tx)
+
+    def getrawtransaction(self, txid):
+        return self._cli_cmnd('getrawtransaction', txid, '1')

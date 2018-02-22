@@ -1,6 +1,8 @@
 from twisted.trial import unittest
-from twisted.internet import defer
+from twisted.internet import defer, reactor
 from lbrytest.wrapper import Lbrycrd, LbryumServer, Lbry
+
+from lbrynet.core.call_later_manager import CallLaterManager
 
 
 class IntegrationTestCase(unittest.TestCase):
@@ -9,6 +11,7 @@ class IntegrationTestCase(unittest.TestCase):
 
     @defer.inlineCallbacks
     def setUp(self):
+        CallLaterManager.setup(reactor.callLater)
         self.lbrycrd = Lbrycrd(verbose=self.VERBOSE)
         yield self.lbrycrd.start()
         yield self.lbrycrd.generate(110)
@@ -16,16 +19,16 @@ class IntegrationTestCase(unittest.TestCase):
         self.lbryumserver.start()  # defers to thread
         self.lbry = Lbry()
         yield self.lbry.start()
-        address = yield self.lbry.wallet.get_least_used_address()
-        yield self.lbrycrd.sendtoaddress(address, 50)
-        yield self.lbrycrd.generate(6)
-        yield self.lbry.wallet.update_balance()
-        print(self.lbry.wallet.get_balance())
 
     @defer.inlineCallbacks
     def tearDown(self):
         try:
             yield self.lbry.stop()
+        except:
+            pass
+
+        try:
+            CallLaterManager.stop()
         except:
             pass
 

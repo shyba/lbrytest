@@ -127,6 +127,10 @@ class LbrycrdProcess(ProcessProtocol):
         if 'Done loading' in data:
             self.ready.callback(True)
 
+    def errReceived(self, data):
+        self.verbose and print(data)
+        self.ready.callback(False)
+
     def processEnded(self, reason):
         self.stopped.callback(True)
 

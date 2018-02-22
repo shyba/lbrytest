@@ -9,7 +9,70 @@ import requests
 from twisted.internet import reactor, defer, utils
 from twisted.internet.protocol import ProcessProtocol
 
+from lbrynet import conf as lbry_conf
+from lbrynet.daemon.DaemonServer import DaemonServer as LbryDaemonServer
 from lbryumserver.main import start_server, stop_server, create_config
+
+
+class MocAnalyticsManager:
+    def __init__(self):
+        self.is_started = True
+
+    def shutdown(self):
+        pass
+
+
+class Lbry:
+
+    def __init__(self, verbose=False):
+        self.verbose = verbose
+        self.data_path = None
+        self.download_path = None
+        self.server = LbryDaemonServer(MocAnalyticsManager())
+
+    @property
+    def daemon(self):
+        assert self.server._daemon is not None, "Lbry daemon has not been started."
+        return self.server._daemon
+
+    @property
+    def session(self):
+        return self.daemon.session
+
+    @property
+    def wallet(self):
+        return self.session.wallet
+
+    @defer.inlineCallbacks
+    def start(self):
+        self.data_path = tempfile.mkdtemp()
+
+        wallet_directory = os.path.join(self.data_path, 'lbryum')
+        download_directory = os.path.join(self.data_path, 'Downloads')
+
+        os.mkdir(wallet_directory)
+        os.mkdir(download_directory)
+
+        with open(os.path.join(wallet_directory, 'regtest_headers'), 'w'):
+            pass
+
+        lbry_conf.settings = None
+        lbry_conf.initialize_settings(load_conf_file=False)
+        lbry_conf.settings['data_dir'] = os.path.join(self.data_path, 'lbrynet')
+        lbry_conf.settings['lbryum_wallet_dir'] = wallet_directory
+        lbry_conf.settings['download_directory'] = download_directory
+        lbry_conf.settings['use_upnp'] = False
+        lbry_conf.settings['blockchain_name'] = 'lbrycrd_regtest'
+        lbry_conf.settings['lbryum_servers'] = [('localhost', 50001)]
+        lbry_conf.settings.load_conf_file_settings()
+
+        yield self.server.start(use_auth=False)
+
+    @defer.inlineCallbacks
+    def stop(self):
+        yield self.daemon.exchange_rate_manager.stop()
+        yield self.daemon._shutdown()
+        yield self.server.server_port.stopListening()
 
 
 class LbryumServer:
@@ -149,12 +212,19 @@ class Lbrycrd:
             if cleanup:
                 shutil.rmtree(self.data_path, ignore_errors=True)
 
+    @defer.inlineCallbacks
     def _cli_cmnd(self, *args):
-        return utils.getProcessValue(
-            self.lbrycrd_cli_path, [
-                '-datadir={}'.format(self.data_path), '-regtest',
-            ] + list(args)
+        cmnd_args = [
+            '-datadir={}'.format(self.data_path), '-regtest',
+        ] + list(args)
+        self.verbose and print('{} {}'.format(
+            self.lbrycrd_cli_path, ' '.join(cmnd_args)
+        ))
+        out, err, value = yield utils.getProcessOutputAndValue(
+            self.lbrycrd_cli_path, cmnd_args
         )
+        self.verbose and print(out)
+        defer.returnValue(value)
 
     def generate(self, blocks):
         return self._cli_cmnd('generate', str(blocks))

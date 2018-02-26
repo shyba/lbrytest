@@ -190,8 +190,7 @@ class Lbrycrd:
     def lbrycrd_conf(self):
         return os.path.join(self.data_path, 'lbrycrd.conf')
 
-    @defer.inlineCallbacks
-    def start(self):
+    def setup(self):
         self.ensure()
         self.data_path = tempfile.mkdtemp()
         with open(self.lbrycrd_conf, 'w') as conf:
@@ -199,8 +198,9 @@ class Lbrycrd:
                 'rpcuser=rpcuser\n'
                 'rpcpassword=rpcpassword\n'
             )
-        if self.parent_data_path and os.path.exists(self.parent_data_path):
-            shutil.copytree(self.parent_data_path, self.data_path)
+
+    @defer.inlineCallbacks
+    def start(self):
         self.process = LbrycrdProcess(self.verbose)
         reactor.spawnProcess(
             self.process, self.lbrycrdd_path, [
@@ -217,7 +217,10 @@ class Lbrycrd:
             yield self.process.stop()
         finally:
             if cleanup:
-                shutil.rmtree(self.data_path, ignore_errors=True)
+                self.cleanup()
+
+    def cleanup(self):
+        shutil.rmtree(self.data_path, ignore_errors=True)
 
     @defer.inlineCallbacks
     def _cli_cmnd(self, *args):
@@ -240,6 +243,9 @@ class Lbrycrd:
 
     def sendtoaddress(self, address, credits):
         return self._cli_cmnd('sendtoaddress', address, str(credits))
+
+    def claimname(self, name, tx, credits):
+        return self._cli_cmnd('claimname', name, tx, str(credits))
 
     def decoderawtransaction(self, tx):
         return self._cli_cmnd('decoderawtransaction', tx)

@@ -1,6 +1,7 @@
 from twisted.trial import unittest
 from twisted.internet import defer, reactor
 from lbrytest.wrapper import Lbrycrd, LbryumServer, Lbry
+from lbrytest.fixture import Fixture
 
 from lbrynet.core.call_later_manager import CallLaterManager
 
@@ -8,13 +9,18 @@ from lbrynet.core.call_later_manager import CallLaterManager
 class IntegrationTestCase(unittest.TestCase):
 
     VERBOSE = False
+    USE_FIXTURE = False
 
     @defer.inlineCallbacks
     def setUp(self):
         CallLaterManager.setup(reactor.callLater)
         self.lbrycrd = Lbrycrd(verbose=self.VERBOSE)
+        self.lbrycrd.setup()
+        if self.USE_FIXTURE:
+            Fixture(self.lbrycrd).extract()
         yield self.lbrycrd.start()
-        yield self.lbrycrd.generate(110)
+        if not self.USE_FIXTURE:
+            yield self.lbrycrd.generate(110)
         self.lbryumserver = LbryumServer(self.lbrycrd, verbose=self.VERBOSE)
         self.lbryumserver.start()  # defers to thread
         self.lbry = Lbry()

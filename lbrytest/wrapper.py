@@ -206,7 +206,7 @@ class Lbrycrd:
             self.process, self.lbrycrdd_path, [
                 self.lbrycrdd_path,
                 '-datadir={}'.format(self.data_path),
-                '-printtoconsole', '-regtest', '-server',
+                '-printtoconsole', '-regtest', '-server', '-txindex'
             ]
         )
         yield self.process.ready

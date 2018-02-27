@@ -35,12 +35,10 @@ class Fixture:
             for _ in range(self.random.randrange(10)):
                 txn = self.random.randint(1, 100)
                 name = 'name{}'.format(txn)
-                # claim = self._claim()
+                claim = self._claim()
                 amount = self.random.randrange(1, 5)/1000.0
                 yield self.lbrycrd.claimname(
-                    name,
-                    '{}',  # claim.serialized,
-                    amount
+                    name, claim.serialized.encode('hex'), amount
                 )
             yield self.lbrycrd.generate(1)
 
@@ -88,6 +86,7 @@ class Fixture:
 @defer.inlineCallbacks
 def generate_test_chain():
     lbrycrd = Lbrycrd(verbose=True)
+    lbrycrd.setup()
     fixture = Fixture(lbrycrd)
     yield lbrycrd.start()
     yield lbrycrd.generate(110)

@@ -48,8 +48,6 @@ class AbandonClaimLookup(IntegrationTestCase):
         yield self.lbrycrd.sendtoaddress(address, 5)
         yield self.lbrycrd.generate(1)
         yield self.lbry.wallet.update_balance()
-        yield threads.deferToThread(time.sleep, 5)
-        self.assertEqual(self.lbry.wallet.get_balance(), 5)
         self._backup_wallet('original_wallet')
         self._reset_lbryum_data()
         yield self._restore_backup('original_wallet')
@@ -57,4 +55,21 @@ class AbandonClaimLookup(IntegrationTestCase):
         yield threads.deferToThread(time.sleep, 2)
         self.assertEqual(self.lbry.wallet.get_balance(), 5)
 
+    @defer.inlineCallbacks
+    def test_new_address_used_after_backup(self):
+        address = yield self.lbry.wallet.get_least_used_address()
+        yield self.lbrycrd.sendtoaddress(address, 5)
+        yield self.lbrycrd.generate(1)
+        yield self.lbry.wallet.update_balance()
+        self._backup_wallet('original_wallet')
 
+        new_address = yield self.lbry.wallet.get_new_address()
+        yield self.lbrycrd.sendtoaddress(new_address, 5)
+        yield self.lbrycrd.generate(1)
+        yield self.lbry.wallet.update_balance()
+
+        self._reset_lbryum_data()
+        yield self._restore_backup('original_wallet')
+        yield self.lbry.wallet.update_balance()
+        yield threads.deferToThread(time.sleep, 2)
+        self.assertEqual(self.lbry.wallet.get_balance(), 10)

@@ -108,3 +108,22 @@ class WalletBackupTestCase(IntegrationTestCase):
         channel_list = yield self.lbry.wallet.channel_list()
         self.assertEqual(len(channel_list), 1)
         self.assertEqual(channel_list[0]['name'], '@beforeBackup')
+
+    @defer.inlineCallbacks
+    def test_claim_after_backup(self):
+        address = yield self.lbry.wallet.get_least_used_address()
+        yield self.lbrycrd.sendtoaddress(address, 5)
+        yield self.lbrycrd.generate(1)
+        yield threads.deferToThread(time.sleep, 2)
+        self._backup_wallet('original_wallet')
+        yield self.lbry.wallet.update_balance()
+        yield self.lbry.wallet.claim_new_channel('@beforeBackup', 1)
+        yield self.lbrycrd.generate(1)
+        yield threads.deferToThread(time.sleep, 2)
+        self._reset_lbryum_data()
+        yield self._restore_backup('original_wallet')
+        yield self.lbry.wallet.update_balance()
+        yield threads.deferToThread(time.sleep, 2)
+        channel_list = yield self.lbry.wallet.channel_list()
+        self.assertEqual(len(channel_list), 1)
+        self.assertEqual(channel_list[0]['name'], '@beforeBackup')

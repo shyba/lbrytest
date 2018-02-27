@@ -71,5 +71,30 @@ class AbandonClaimLookup(IntegrationTestCase):
         self._reset_lbryum_data()
         yield self._restore_backup('original_wallet')
         yield self.lbry.wallet.update_balance()
-        yield threads.deferToThread(time.sleep, 2)
+        yield threads.deferToThread(time.sleep, 5)
+        self.assertEqual(self.lbry.wallet.get_balance(), 10)
+
+    @defer.inlineCallbacks
+    def test_big_wallet_after_backup(self):
+        # From https://github.com/lbryio/lbryum/issues/155
+        # It was reported loss of addresses after 10/20 new ones
+        address = yield self.lbry.wallet.get_least_used_address()
+        yield self.lbrycrd.sendtoaddress(address, 5)
+        yield self.lbrycrd.generate(1)
+        yield self.lbry.wallet.update_balance()
+        self._backup_wallet('original_wallet')
+
+        for _ in xrange(20):
+            new_address = yield self.lbry.wallet.get_new_address()
+        yield self.lbrycrd.sendtoaddress(new_address, 5)
+        yield self.lbrycrd.generate(1)
+        yield self.lbry.wallet.update_balance()
+        yield threads.deferToThread(time.sleep, 10)
+        self.assertEqual(self.lbry.wallet.get_balance(), 10)
+
+        self._reset_lbryum_data()
+        yield self._restore_backup('original_wallet')
+        yield self.lbry.wallet.update_balance()
+        yield threads.deferToThread(time.sleep, 10)
+        yield self.lbry.wallet.update_balance()
         self.assertEqual(self.lbry.wallet.get_balance(), 10)

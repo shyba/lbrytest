@@ -7,17 +7,8 @@ import os
 from lbrytest.case import IntegrationTestCase
 from twisted.internet import defer, threads
 
-import logging
-log = logging.getLogger()
-handler = logging.StreamHandler()
-handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-8s %(name)s:%(lineno)d: %(message)s"))
-log.addHandler(handler)
-log.setLevel(logging.DEBUG)
-logging.getLogger('lbrynet').setLevel(logging.DEBUG)
-logging.getLogger('lbryum').setLevel(logging.DEBUG)
 
-
-class AbandonClaimLookup(IntegrationTestCase):
+class WalletBackupTestCase(IntegrationTestCase):
 
     VERBOSE = True
 
@@ -98,3 +89,22 @@ class AbandonClaimLookup(IntegrationTestCase):
         yield threads.deferToThread(time.sleep, 10)
         yield self.lbry.wallet.update_balance()
         self.assertEqual(self.lbry.wallet.get_balance(), 10)
+
+    @defer.inlineCallbacks
+    def test_simple_claim_backup(self):
+        address = yield self.lbry.wallet.get_least_used_address()
+        yield self.lbrycrd.sendtoaddress(address, 5)
+        yield self.lbrycrd.generate(1)
+        yield threads.deferToThread(time.sleep, 2)
+        yield self.lbry.wallet.update_balance()
+        yield self.lbry.wallet.claim_new_channel('@beforeBackup', 1)
+        yield self.lbrycrd.generate(1)
+        yield threads.deferToThread(time.sleep, 2)
+        self._backup_wallet('original_wallet')
+        self._reset_lbryum_data()
+        yield self._restore_backup('original_wallet')
+        yield self.lbry.wallet.update_balance()
+        yield threads.deferToThread(time.sleep, 2)
+        channel_list = yield self.lbry.wallet.channel_list()
+        self.assertEqual(len(channel_list), 1)
+        self.assertEqual(channel_list[0]['name'], '@beforeBackup')

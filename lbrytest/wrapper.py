@@ -4,10 +4,12 @@ import signal
 import shutil
 import zipfile
 import tempfile
+import socket
 
 import requests
-from twisted.internet import reactor, defer, utils
+from twisted.internet import reactor, defer, utils, threads
 from twisted.internet.protocol import ProcessProtocol
+from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
 
 from lbrynet import conf as lbry_conf
 from lbrynet.daemon.DaemonServer import DaemonServer as LbryDaemonServer
@@ -154,6 +156,11 @@ class Lbrycrd:
         self.lbrycrdd_path = os.path.join(self.lbrycrd_dir, 'lbrycrdd')
         self.process = None
         self.verbose = verbose
+        self.lbrycrdd_url = 'http://%s:%s@%s:%s/' % (
+            'rpcuser',
+            'rpcpassword',
+            'localhost',
+            '18332')
 
     @property
     def exists(self):
@@ -238,17 +245,35 @@ class Lbrycrd:
             print(err)
         defer.returnValue(value)
 
+    def _rpc(self, method, *args):
+        while True:
+            try:
+                r = AuthServiceProxy(self.lbrycrdd_url, method, timeout=600).__call__(*args)
+                return r
+            except JSONRPCException as j:
+                if j.error['code'] == -28:
+                    continue
+                else:
+                    raise BaseException(j.error)
+            except socket.timeout as e:
+                continue
+            except Exception as e:
+                raise e
+
+    def _deferred_rpc(self, method, *args):
+        return threads.deferToThread(self._rpc, method, *args)
+
     def generate(self, blocks):
-        return self._cli_cmnd('generate', str(blocks))
+        return self._deferred_rpc('generate', blocks)
 
     def sendtoaddress(self, address, credits):
-        return self._cli_cmnd('sendtoaddress', address, str(credits))
+        return self._deferred_rpc('sendtoaddress', address, credits)
 
     def claimname(self, name, tx, credits):
-        return self._cli_cmnd('claimname', name, tx, str(credits))
+        return self._deferred_rpc('claimname', name, tx, credits)
 
     def decoderawtransaction(self, tx):
-        return self._cli_cmnd('decoderawtransaction', tx)
+        return self._deferred_rpc('decoderawtransaction', tx)
 
     def getrawtransaction(self, txid):
-        return self._cli_cmnd('getrawtransaction', txid, '1')
+        return self._deferred_rpc('getrawtransaction', txid, 1)

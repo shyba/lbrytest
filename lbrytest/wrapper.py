@@ -26,9 +26,12 @@ class Lbry:
 
     def __init__(self, verbose=False):
         self.verbose = verbose
-        self.data_path = None
         self.download_path = None
         self.server = LbryDaemonServer(MocAnalyticsManager())
+        self.data_path = tempfile.mkdtemp()
+        self.wallet_directory = os.path.join(self.data_path, 'lbryum')
+        self.download_directory = os.path.join(self.data_path, 'Downloads')
+        self.create_data_dirs()
 
     @property
     def daemon(self):
@@ -43,24 +46,22 @@ class Lbry:
     def wallet(self):
         return self.session.wallet
 
+    def create_data_dirs(self):
+
+        os.mkdir(self.wallet_directory)
+        os.mkdir(self.download_directory)
+
+        with open(os.path.join(self.wallet_directory, 'regtest_headers'), 'w'):
+            pass
+
     @defer.inlineCallbacks
     def start(self):
-        self.data_path = tempfile.mkdtemp()
-
-        wallet_directory = os.path.join(self.data_path, 'lbryum')
-        download_directory = os.path.join(self.data_path, 'Downloads')
-
-        os.mkdir(wallet_directory)
-        os.mkdir(download_directory)
-
-        with open(os.path.join(wallet_directory, 'regtest_headers'), 'w'):
-            pass
 
         lbry_conf.settings = None
         lbry_conf.initialize_settings(load_conf_file=False)
         lbry_conf.settings['data_dir'] = os.path.join(self.data_path, 'lbrynet')
-        lbry_conf.settings['lbryum_wallet_dir'] = wallet_directory
-        lbry_conf.settings['download_directory'] = download_directory
+        lbry_conf.settings['lbryum_wallet_dir'] = self.wallet_directory
+        lbry_conf.settings['download_directory'] = self.download_directory
         lbry_conf.settings['use_upnp'] = False
         lbry_conf.settings['blockchain_name'] = 'lbrycrd_regtest'
         lbry_conf.settings['lbryum_servers'] = [('localhost', 50001)]

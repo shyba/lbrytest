@@ -32,6 +32,7 @@ class Lbry:
         self.wallet_directory = os.path.join(self.data_path, 'lbryum')
         self.download_directory = os.path.join(self.data_path, 'Downloads')
         self.create_data_dirs()
+        self.networkDeferred = defer.Deferred()
 
     @property
     def daemon(self):
@@ -45,6 +46,14 @@ class Lbry:
     @property
     def wallet(self):
         return self.session.wallet
+
+    def _network_callback(self):
+        print('*************')
+        reactor.callLater(0.5, self.networkDeferred.callback, None)
+        self.networkDeferred = defer.Deferred()
+
+    def _register_network_update_callback(self):
+        self.wallet.network.register_callback(lambda _: self._network_callback(), events=['updated'])
 
     def create_data_dirs(self):
 
@@ -68,6 +77,7 @@ class Lbry:
         lbry_conf.settings.load_conf_file_settings()
 
         yield self.server.start(use_auth=False)
+        self._register_network_update_callback()
 
     @defer.inlineCallbacks
     def stop(self):
@@ -207,7 +217,7 @@ class Lbrycrd:
             self.process, self.lbrycrdd_path, [
                 self.lbrycrdd_path,
                 '-datadir={}'.format(self.data_path),
-                '-printtoconsole', '-regtest', '-server', '-txindex'
+                '-printtoconsole', '-regtest', '-server', '-txindex=1'
             ]
         )
         yield self.process.ready

@@ -1,9 +1,7 @@
 from twisted.trial import unittest
-from twisted.internet import defer, reactor
+from twisted.internet import defer
 from lbrytest.wrapper import startup, shutdown
 from lbrytest.fixture import Fixture
-
-from lbrynet.core.call_later_manager import CallLaterManager
 
 
 class IntegrationTestCase(unittest.TestCase):

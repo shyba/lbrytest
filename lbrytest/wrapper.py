@@ -291,13 +291,16 @@ class Lbrycrd:
         self.verbose and print(out)
         if err:
             print(err)
-        defer.returnValue(value)
+        defer.returnValue((out, err, value))
 
     def generate(self, blocks):
         return self._cli_cmnd('generate', str(blocks))
 
+    @defer.inlineCallbacks
     def sendtoaddress(self, address, credits):
-        return self._cli_cmnd('sendtoaddress', address, str(credits))
+        """ Returns the transaction id. """
+        out, error, code = yield self._cli_cmnd('sendtoaddress', address, str(credits))
+        defer.returnValue(out.strip())
 
     def decoderawtransaction(self, tx):
         return self._cli_cmnd('decoderawtransaction', tx)

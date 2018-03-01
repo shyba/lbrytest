@@ -1,21 +1,39 @@
 import os
+import time
 import shutil
 import zipfile
 from random import Random
 
-from twisted.internet import defer, reactor
+from twisted.internet import defer, reactor, threads
+defer.Deferred.debug = True
 
 from lbrynet.core.utils import generate_id
 from lbryschema.claim import ClaimDict
-from lbrytest.wrapper import Lbrycrd
+from lbrytest.wrapper import startup, shutdown
+
+import logging
+logging.getLogger('lbrynet').setLevel(logging.DEBUG)
+logging.getLogger('lbryum').setLevel(logging.DEBUG)
 
 
 class Fixture:
 
-    def __init__(self, lbrycrd, blocks=100, seed=2015):
-        self.lbrycrd = lbrycrd
+    def __init__(self, blocks=100, txns_per_block=100, seed=2015):
         self.blocks = blocks
+        self.txns_per_block = txns_per_block
         self.random = Random(seed)
+        # set by startup():
+        self.lbrycrd = None
+        self.lbry = None
+
+    def start(self):
+        return startup(self, verbose=True)
+
+    def stop(self):
+        return shutdown(self, cleanup=False)
+
+    def cleanup(self):
+        self.lbrycrd.cleanup()
 
     @property
     def data_dir(self):
@@ -31,15 +49,16 @@ class Fixture:
 
     @defer.inlineCallbacks
     def load(self):
+        address = yield self.lbry.wallet.get_least_used_address()
+        yield self.lbrycrd.sendtoaddress(address, 9.9)
+        yield self.lbrycrd.generate(1)
+        yield threads.deferToThread(time.sleep, 5)
         for block in range(self.blocks):
-            for _ in range(self.random.randrange(10)):
-                txn = self.random.randint(1, 100)
-                name = 'name{}'.format(txn)
-                claim = self._claim()
+            for txn in range(self.txns_per_block):
+                name = 'block{}txn{}'.format(block, txn)
                 amount = self.random.randrange(1, 5)/1000.0
-                yield self.lbrycrd.claimname(
-                    name, claim.serialized.encode('hex'), amount
-                )
+                claim = yield self.lbry.wallet.claim_new_channel('@'+name, amount)
+                yield self.lbry.wallet.wait_for_tx_in_wallet(claim['txid'])
             yield self.lbrycrd.generate(1)
 
     def save(self):
@@ -85,15 +104,12 @@ class Fixture:
 
 @defer.inlineCallbacks
 def generate_test_chain():
-    lbrycrd = Lbrycrd(verbose=True)
-    lbrycrd.setup()
-    fixture = Fixture(lbrycrd)
-    yield lbrycrd.start()
-    yield lbrycrd.generate(110)
+    fixture = Fixture(10, 10)
+    yield fixture.start()
     yield fixture.load()
-    yield lbrycrd.stop(cleanup=False)
+    yield fixture.stop()
     fixture.save()
-    lbrycrd.cleanup()
+    yield fixture.cleanup()
 
 
 if __name__ == "__main__":

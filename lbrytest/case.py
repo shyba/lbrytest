@@ -1,6 +1,6 @@
 from twisted.trial import unittest
 from twisted.internet import defer, reactor
-from lbrytest.wrapper import Lbrycrd, LbryumServer, Lbry
+from lbrytest.wrapper import startup, shutdown
 from lbrytest.fixture import Fixture
 
 from lbrynet.core.call_later_manager import CallLaterManager
@@ -11,36 +11,22 @@ class IntegrationTestCase(unittest.TestCase):
     VERBOSE = False
     USE_FIXTURE = False
 
-    @defer.inlineCallbacks
     def setUp(self):
-        CallLaterManager.setup(reactor.callLater)
-        self.lbrycrd = Lbrycrd(verbose=self.VERBOSE)
-        self.lbrycrd.setup()
+        return startup(self, self.VERBOSE, self.setUpFixture, self.setUpLbrycrd)
+
+    def setUpFixture(self):
+        """ Called before lbrycrd is started to extract a fresh
+            blockchain fixture. May return Deferred."""
         if self.USE_FIXTURE:
-            Fixture(self.lbrycrd).extract()
-        yield self.lbrycrd.start()
+            fixture = Fixture()
+            fixture.lbrycrd = self.lbrycrd
+            fixture.extract()
+
+    def setUpLbrycrd(self):
+        """ Called after lbrycrd is started to do any further setup
+            before starting lbryum-server. May return Deferred. """
         if not self.USE_FIXTURE:
-            yield self.lbrycrd.generate(110)
-        self.lbryumserver = LbryumServer(self.lbrycrd, verbose=self.VERBOSE)
-        self.lbryumserver.start()  # defers to thread
-        self.lbry = Lbry()
-        yield self.lbry.start()
+            return self.lbrycrd.generate(110)
 
-    @defer.inlineCallbacks
     def tearDown(self):
-        try:
-            yield self.lbry.stop()
-        except:
-            pass
-
-        try:
-            CallLaterManager.stop()
-        except:
-            pass
-
-        try:
-            yield self.lbryumserver.stop()
-        except:
-            pass
-
-        yield self.lbrycrd.stop()
+        return shutdown(self)

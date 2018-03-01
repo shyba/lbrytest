@@ -10,8 +10,52 @@ from twisted.internet import reactor, defer, utils
 from twisted.internet.protocol import ProcessProtocol
 
 from lbrynet import conf as lbry_conf
+from lbrynet.core.call_later_manager import CallLaterManager
 from lbrynet.daemon.DaemonServer import DaemonServer as LbryDaemonServer
 from lbryumserver.main import start_server, stop_server, create_config
+
+
+@defer.inlineCallbacks
+def startup(o, verbose=False, fixture=None, init=None):
+    CallLaterManager.setup(reactor.callLater)
+    o.lbrycrd = Lbrycrd(verbose=verbose)
+    o.lbrycrd.setup()
+    if fixture:
+        yield defer.maybeDeferred(fixture)
+    yield o.lbrycrd.start()
+    if init:
+        yield defer.maybeDeferred(init)
+    else:
+        # lbry.start() will never return unless there
+        # are some blocks generated first
+        yield o.lbrycrd.generate(110)
+    o.lbryumserver = LbryumServer(o.lbrycrd, verbose=verbose)
+    o.lbryumserver.start()  # defers to thread
+    o.lbry = Lbry()
+    yield o.lbry.start()
+
+
+@defer.inlineCallbacks
+def shutdown(o, cleanup=True):
+    try:
+        yield o.lbry.stop()
+    except:
+        pass
+
+    try:
+        CallLaterManager.stop()
+    except:
+        pass
+
+    try:
+        yield o.lbryumserver.stop()
+    except:
+        pass
+
+    try:
+        yield o.lbrycrd.stop(cleanup=cleanup)
+    except:
+        pass
 
 
 class MocAnalyticsManager:
@@ -64,6 +108,7 @@ class Lbry:
         lbry_conf.settings['use_upnp'] = False
         lbry_conf.settings['blockchain_name'] = 'lbrycrd_regtest'
         lbry_conf.settings['lbryum_servers'] = [('localhost', 50001)]
+        lbry_conf.settings['known_dht_nodes'] = []
         lbry_conf.settings.load_conf_file_settings()
 
         yield self.server.start(use_auth=False)
@@ -115,13 +160,23 @@ class LbryumServer:
 
 class LbrycrdProcess(ProcessProtocol):
 
+    IGNORE_OUTPUT = [
+        'keypool keep',
+        'keypool reserve',
+        'keypool return',
+    ]
+
     def __init__(self, verbose=False):
         self.ready = defer.Deferred()
         self.stopped = defer.Deferred()
         self.verbose = verbose
 
+    def _print_output(self, data):
+        if self.verbose and not any(ignore in data for ignore in self.IGNORE_OUTPUT):
+            print(data)
+
     def outReceived(self, data):
-        self.verbose and print(data)
+        self._print_output(data)
         if 'Error:' in data:
             self.ready.callback(False)
         if 'Done loading' in data:
@@ -243,9 +298,6 @@ class Lbrycrd:
 
     def sendtoaddress(self, address, credits):
         return self._cli_cmnd('sendtoaddress', address, str(credits))
-
-    def claimname(self, name, tx, credits):
-        return self._cli_cmnd('claimname', name, tx, str(credits))
 
     def decoderawtransaction(self, tx):
         return self._cli_cmnd('decoderawtransaction', tx)

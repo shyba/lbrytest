@@ -15,47 +15,50 @@ from lbrynet.daemon.DaemonServer import DaemonServer as LbryDaemonServer
 from lbryumserver.main import start_server, stop_server, create_config
 
 
-@defer.inlineCallbacks
-def startup(o, verbose=False, fixture=None, init=None):
-    CallLaterManager.setup(reactor.callLater)
-    o.lbrycrd = Lbrycrd(verbose=verbose)
-    o.lbrycrd.setup()
-    if fixture:
-        yield defer.maybeDeferred(fixture)
-    yield o.lbrycrd.start()
-    if init:
-        yield defer.maybeDeferred(init)
-    else:
-        # lbry.start() will never return unless there
-        # are some blocks generated first
-        yield o.lbrycrd.generate(110)
-    o.lbryumserver = LbryumServer(o.lbrycrd, verbose=verbose)
-    o.lbryumserver.start()  # defers to thread
-    o.lbry = Lbry()
-    yield o.lbry.start()
+class LbryServiceStack:
 
+    def __init__(self, verbose=False):
+        self.lbrycrd = Lbrycrd(verbose=verbose)
+        self.lbryumserver = LbryumServer(self.lbrycrd, verbose=verbose)
+        self.lbry = Lbry()
 
-@defer.inlineCallbacks
-def shutdown(o, cleanup=True):
-    try:
-        yield o.lbry.stop()
-    except:
-        pass
+    @defer.inlineCallbacks
+    def startup(self, before_lbrycrd_start=None, after_lbrycrd_start=None):
+        CallLaterManager.setup(reactor.callLater)
+        self.lbrycrd.setup()
+        if before_lbrycrd_start:
+            yield defer.maybeDeferred(before_lbrycrd_start)
+        yield self.lbrycrd.start()
+        if after_lbrycrd_start:
+            yield defer.maybeDeferred(after_lbrycrd_start)
+        else:
+            # lbry.start() will never return unless there
+            # are some blocks generated first
+            yield self.lbrycrd.generate(110)
+        self.lbryumserver.start()
+        yield self.lbry.start()
 
-    try:
-        CallLaterManager.stop()
-    except:
-        pass
+    @defer.inlineCallbacks
+    def shutdown(self, cleanup=True):
+        try:
+            yield self.lbry.stop()
+        except Exception as e:
+            print(e)
 
-    try:
-        yield o.lbryumserver.stop()
-    except:
-        pass
+        try:
+            CallLaterManager.stop()
+        except Exception as e:
+            print(e)
 
-    try:
-        yield o.lbrycrd.stop(cleanup=cleanup)
-    except:
-        pass
+        try:
+            yield self.lbryumserver.stop()
+        except Exception as e:
+            print(e)
+
+        try:
+            yield self.lbrycrd.stop(cleanup=cleanup)
+        except Exception as e:
+            print(e)
 
 
 class MocAnalyticsManager:
@@ -87,7 +90,6 @@ class Lbry:
     def wallet(self):
         return self.session.wallet
 
-    @defer.inlineCallbacks
     def start(self):
         self.data_path = tempfile.mkdtemp()
 
@@ -111,7 +113,7 @@ class Lbry:
         lbry_conf.settings['known_dht_nodes'] = []
         lbry_conf.settings.load_conf_file_settings()
 
-        yield self.server.start(use_auth=False)
+        return self.server.start(use_auth=False)
 
     @defer.inlineCallbacks
     def stop(self):
@@ -126,6 +128,7 @@ class LbryumServer:
         self.lbrycrd = lbrycrd
         self.data_path = None
         self.verbose = verbose
+        self.transports = []
 
     @property
     def lbryum_conf(self):
@@ -139,6 +142,10 @@ class LbryumServer:
                 'type=lbrycrd_regtest\n'
                 '[server]\n'
                 'logfile={}\n'
+                'stratum_tcp_port=50001\n'
+                'stratum_http_port=\n'
+                'stratum_tcp_ssl_port=\n'
+                'stratum_http_ssl_port=\n'
                 '[leveldb]\n'
                 'path={}\n'
                 .format(
@@ -150,12 +157,17 @@ class LbryumServer:
             filename=self.lbryum_conf,
             lbrycrdd_dir=self.lbrycrd.data_path
         )
-        start_server(config)
+        self.transports = start_server(config)
+        assert len(self.transports) == 1, "Should have exactly one transport server, startum tcp."
+        return self.transports[0].started
 
+    @defer.inlineCallbacks
     def stop(self, cleanup=True):
         stop_server()
+        yield self.transports[0].stopped
         if cleanup:
             shutil.rmtree(self.data_path, ignore_errors=True)
+        defer.returnValue(True)
 
 
 class LbrycrdProcess(ProcessProtocol):
@@ -307,3 +319,6 @@ class Lbrycrd:
 
     def getrawtransaction(self, txid):
         return self._cli_cmnd('getrawtransaction', txid, '1')
+
+    def claimname(self, name, value, amount):
+        return self._cli_cmnd('claimname', name, value, str(amount))

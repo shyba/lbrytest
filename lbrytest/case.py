@@ -1,17 +1,11 @@
 from twisted.trial import unittest
-from twisted.internet import defer
 from lbrytest.wrapper import LbryServiceStack
 from lbrytest.fixture import Fixture
-
-import logging
-logging.getLogger('lbrynet').setLevel(logging.DEBUG)
-logging.getLogger('lbryum').setLevel(logging.DEBUG)
-defer.Deferred.debug = True
 
 
 class IntegrationTestCase(unittest.TestCase):
 
-    VERBOSE = True
+    VERBOSE = False
     USE_FIXTURE = False
 
     def setUp(self):

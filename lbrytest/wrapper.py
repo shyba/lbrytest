@@ -4,6 +4,7 @@ import signal
 import shutil
 import zipfile
 import tempfile
+import logging
 
 import requests
 from twisted.internet import reactor, defer, utils
@@ -18,8 +19,17 @@ from lbryumserver.main import start_server, stop_server, create_config
 class LbryServiceStack:
 
     def __init__(self, verbose=False):
+        defer.Deferred.debug = verbose
+        if verbose:
+            logging.getLogger('lbrynet').setLevel(logging.INFO)
+            logging.getLogger('lbryum').setLevel(logging.INFO)
+            logging.getLogger('lbryumserver').setLevel(logging.INFO)
+        else:
+            logging.getLogger('lbrynet').setLevel(logging.ERROR)
+            logging.getLogger('lbryum').setLevel(logging.ERROR)
+            logging.getLogger('lbryumserver').setLevel(logging.ERROR)
         self.lbrycrd = Lbrycrd(verbose=verbose)
-        self.lbryumserver = LbryumServer(self.lbrycrd, verbose=verbose)
+        self.lbryumserver = LbryumServer(self.lbrycrd)
         self.lbry = Lbry()
 
     @defer.inlineCallbacks
@@ -124,10 +134,9 @@ class Lbry:
 
 class LbryumServer:
 
-    def __init__(self, lbrycrd, verbose=False):
+    def __init__(self, lbrycrd):
         self.lbrycrd = lbrycrd
         self.data_path = None
-        self.verbose = verbose
         self.transports = []
 
     @property
@@ -157,7 +166,7 @@ class LbryumServer:
             filename=self.lbryum_conf,
             lbrycrdd_dir=self.lbrycrd.data_path
         )
-        self.transports = start_server(config)
+        self.transports = start_server(config, setup_logging=False)
         assert len(self.transports) == 1, "Should have exactly one transport server, startum tcp."
         return self.transports[0].started
 

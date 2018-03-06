@@ -104,9 +104,4 @@ def generate_test_chain(_):
 
 
 if __name__ == "__main__":
-    import logging
-    logging.getLogger('lbrynet').setLevel(logging.DEBUG)
-    logging.getLogger('lbryum').setLevel(logging.DEBUG)
-    defer.Deferred.debug = True
-
     task.react(generate_test_chain)

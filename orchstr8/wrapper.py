@@ -106,9 +106,9 @@ class Lbry:
     def wallet(self):
         return self.session.wallet
 
-    def stratum_command(self, method, args):
+    def stratum_command(self, method, *args):
         network = self.wallet.network
-        return network.synchronous_get([method, [args]])
+        return network.synchronous_get([method, list(args)])
 
     def start(self):
         self.data_path = tempfile.mkdtemp()

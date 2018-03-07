@@ -1,4 +1,6 @@
 from __future__ import print_function
+
+import json
 import os
 import signal
 import shutil
@@ -347,6 +349,11 @@ class Lbrycrd:
 
     def decoderawtransaction(self, tx):
         return self._cli_cmnd('decoderawtransaction', tx)
+
+    @defer.inlineCallbacks
+    def getnameproof(self, name, *args):
+        out, _, _ = yield self._cli_cmnd('getnameproof', name, *args)
+        defer.returnValue(json.loads(out.strip()))
 
     def getrawtransaction(self, txid):
         return self._cli_cmnd('getrawtransaction', txid, '1')

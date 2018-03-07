@@ -213,17 +213,20 @@ class LbrycrdProcess(ProcessProtocol):
 
     def outReceived(self, data):
         self._print_output(data)
-        if 'Error:' in data:
+        called = self.ready.called
+        if not called and 'Error:' in data:
             self.ready.callback(False)
-        if 'Done loading' in data:
+        if not called and 'Done loading' in data:
             self.ready.callback(True)
 
     def errReceived(self, data):
         self.verbose and print(data)
-        self.ready.callback(False)
+        if not self.ready.called:
+            self.ready.callback(False)
 
     def processEnded(self, reason):
-        self.stopped.callback(True)
+        if not self.stopped.called:
+            self.stopped.callback(True)
 
     def stop(self):
         if self.transport.pid:

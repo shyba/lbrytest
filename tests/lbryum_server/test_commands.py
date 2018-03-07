@@ -40,12 +40,44 @@ class CommandsTestCase(IntegrationTestCase):
         self.assertEqual(confirmed_balance, {'unconfirmed': 0, 'confirmed': 250000000})
 
     @defer.inlineCallbacks
-    def test_claim_commands(self):
-        claimtxid = (yield self.lbrycrd.claimname('@me', 'something', 0.1))[0].strip()
-        raw_claimtx = (yield self.lbrycrd.getrawtransaction(claimtxid))[0]
-        raw_claimtx = json.loads(raw_claimtx)
-        yield self.lbrycrd.generate(1)
+    def test_supported_claim_confirmation(self):
+        self.maxDiff = None
+        # claim on unconfirmed tx
+        claimtxid = (yield self.lbrycrd.claimname('@me', 'bebacafe', 0.1))[0].strip()
+        raw_claimtx = yield self.lbrycrd.getrawtransaction(claimtxid)
+
         nameproof = yield self.lbrycrd.getnameproof('@me')
         claimtrie = yield self.lbry.stratum_command('blockchain.claimtrie.getvalue', '@me')
+        self.assertEqual(claimtrie['proof'], nameproof)
+        self.assertEqual(claimtrie['supports'], [])
+
+        claims = yield self.lbry.stratum_command('blockchain.claimtrie.getclaimsintx', claimtxid)
+        self.assertEqual(claims, [{}])  # weird
+        # claim on confirmed tx
+        block_hash = (yield self.lbrycrd.generate(10))
+        claim_info = yield self.lbrycrd.getclaimsforname('@me')
+        claim_info = self._parse_claim_info(claim_info, '@me', 'bebacafe', depth=9)
+
+        claimbyid = yield self.lbry.stratum_command('blockchain.claimtrie.getclaimbyid', claim_info['claim_id'])
+        claim_address = claimbyid['address']
+        validated_address = yield self.lbrycrd.validateaddress(claim_address)
+        self.assertTrue(validated_address['ismine'])
+        del claimbyid['address']
+        self.assertEqual(claimbyid, claim_info)
+
+        nameproof = yield self.lbrycrd.getnameproof('@me', block_hash[0])
+        claimtrie = yield self.lbry.stratum_command('blockchain.claimtrie.getvalue', '@me', block_hash[0])
         self.assertEqual(claimtrie['transaction'], raw_claimtx['hex'])
         self.assertEqual(claimtrie['proof'], nameproof)
+        self.assertEqual(claimtrie['supports'], [])
+
+    def _parse_claim_info(self, claim_info, name, value, sequence=1, depth=0):
+        """
+        Formats daemon claim data into a claim info as specified in the lbryum stratum API
+        """
+        claim = claim_info['claims'][0]
+        return {'claim_sequence': sequence, 'name': name, 'supports': claim['supports'],
+                'valid_at_height': claim['nValidAtHeight'], 'amount': claim['nAmount'],
+                'value': value.encode('hex'), 'height': claim['nHeight'], 'depth': depth, 'nout': claim['n'],
+                'txid': claim['txid'], 'claim_id': claim['claimId'],
+                'effective_amount': claim['nEffectiveAmount']}

@@ -338,8 +338,14 @@ class Lbrycrd:
             print(err)
         defer.returnValue((out, err, value))
 
+    @defer.inlineCallbacks
     def generate(self, blocks):
-        return self._cli_cmnd('generate', str(blocks))
+        """ returns a list of generated block hashes """
+        out, error, code = yield self._cli_cmnd('generate', str(blocks))
+        if error:
+            defer.fail((out, code))
+        else:
+            defer.returnValue(json.loads(out))
 
     @defer.inlineCallbacks
     def sendtoaddress(self, address, credits):

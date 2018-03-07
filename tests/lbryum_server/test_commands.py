@@ -1,3 +1,5 @@
+import json
+
 from lbrytest.case import IntegrationTestCase
 from twisted.internet import defer
 
@@ -36,3 +38,14 @@ class CommandsTestCase(IntegrationTestCase):
         self.assertEqual(confirmed_unspent, [{'height': 111, 'tx_hash': sendtxid, 'value': 250000000, 'tx_pos': txpos}])
         confirmed_balance = self.lbry.stratum_command('blockchain.address.get_balance', address)
         self.assertEqual(confirmed_balance, {'unconfirmed': 0, 'confirmed': 250000000})
+
+    @defer.inlineCallbacks
+    def test_claim_commands(self):
+        claimtxid = (yield self.lbrycrd.claimname('@me', 'something', 0.1))[0].strip()
+        raw_claimtx = (yield self.lbrycrd.getrawtransaction(claimtxid))[0]
+        raw_claimtx = json.loads(raw_claimtx)
+        yield self.lbrycrd.generate(1)
+        nameproof = yield self.lbrycrd.getnameproof('@me')
+        claimtrie = yield self.lbry.stratum_command('blockchain.claimtrie.getvalue', '@me')
+        self.assertEqual(claimtrie['transaction'], raw_claimtx['hex'])
+        self.assertEqual(claimtrie['proof'], nameproof)

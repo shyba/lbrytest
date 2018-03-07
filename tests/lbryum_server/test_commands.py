@@ -35,4 +35,4 @@ class CommandsTestCase(IntegrationTestCase):
         confirmed_unspent = self.lbry.stratum_command('blockchain.address.listunspent', address)
         self.assertEqual(confirmed_unspent, [{'height': 111, 'tx_hash': sendtxid, 'value': 250000000, 'tx_pos': txpos}])
         confirmed_balance = self.lbry.stratum_command('blockchain.address.get_balance', address)
-        self.assertEqual(confirmed_balance, {u'unconfirmed': 0, u'confirmed': 250000000})
+        self.assertEqual(confirmed_balance, {'unconfirmed': 0, 'confirmed': 250000000})

@@ -361,6 +361,15 @@ class Lbrycrd:
         out, _, _ = yield self._cli_cmnd('getnameproof', name, *args)
         defer.returnValue(json.loads(out.strip()))
 
+    @defer.inlineCallbacks
+    def validateaddress(self, address):
+        out, error, code = yield self._cli_cmnd('validateaddress', address)
+        if error:
+            defer.fail((out, code))
+        else:
+            defer.returnValue(json.loads(out))
+
+    @defer.inlineCallbacks
     def getrawtransaction(self, txid):
         return self._cli_cmnd('getrawtransaction', txid, '1')
 

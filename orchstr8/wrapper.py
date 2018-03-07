@@ -31,6 +31,7 @@ class LbryServiceStack:
         self.lbrycrd = Lbrycrd(verbose=verbose)
         self.lbryumserver = LbryumServer(self.lbrycrd)
         self.lbry = Lbry()
+        self.initial_height = 0
 
     @defer.inlineCallbacks
     def startup(self, before_lbrycrd_start=None, after_lbrycrd_start=None):
@@ -45,6 +46,7 @@ class LbryServiceStack:
             # lbry.start() will never return unless there
             # are some blocks generated first
             yield self.lbrycrd.generate(110)
+            self.initial_height = 110
         yield self.lbryumserver.start()
         yield self.lbry.start()
 

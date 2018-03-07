@@ -371,7 +371,27 @@ class Lbrycrd:
 
     @defer.inlineCallbacks
     def getrawtransaction(self, txid):
-        return self._cli_cmnd('getrawtransaction', txid, '1')
+        out, error, code = yield self._cli_cmnd('getrawtransaction', txid, '1')
+        if error:
+            defer.fail((out, code))
+        else:
+            defer.returnValue(json.loads(out))
+
+    @defer.inlineCallbacks
+    def getclaimsforname(self, txid):
+        out, error, code = yield self._cli_cmnd('getclaimsforname', txid)
+        if error:
+            defer.fail((out, code))
+        else:
+            defer.returnValue(json.loads(out))
 
     def claimname(self, name, value, amount):
         return self._cli_cmnd('claimname', name, value, str(amount))
+
+    @defer.inlineCallbacks
+    def supportclaim(self, name, claim_id, amount):
+        out, error, code = yield self._cli_cmnd('supportclaim', name, claim_id, str(amount))
+        if error:
+            defer.fail((out, code))
+        else:
+            defer.returnValue(out.strip())

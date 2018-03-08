@@ -90,7 +90,9 @@ class CommandsTestCase(IntegrationTestCase):
         Formats daemon claim data into a claim info as specified in the lbryum stratum API
         """
         claim = claim_info['claims'][0]
-        return {'claim_sequence': sequence, 'name': name, 'supports': claim['supports'],
+        parsed_supports = [[support['txid'], support['n'], support['nAmount']] for
+                              support in claim['supports']]
+        return {'claim_sequence': sequence, 'name': name, 'supports': parsed_supports,
                 'valid_at_height': claim['nValidAtHeight'], 'amount': claim['nAmount'],
                 'value': value.encode('hex'), 'height': claim['nHeight'], 'depth': depth, 'nout': claim['n'],
                 'txid': claim['txid'], 'claim_id': claim['claimId'],

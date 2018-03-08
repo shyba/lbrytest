@@ -85,6 +85,23 @@ class CommandsTestCase(IntegrationTestCase):
         del claimbyid['address']
         self.assertEqual(claimbyid, claim_info)
 
+        # confirmed claim + confirmed support
+        yield self.lbrycrd.generate(10)
+        claim_info = yield self.lbrycrd.getclaimsforname('@me')
+        claim_info = self._parse_claim_info(claim_info, '@me', 'bebacafe', depth=19)
+
+        nameproof = yield self.lbrycrd.getnameproof('@me')
+        claimtrie = yield self.lbry.stratum_command('blockchain.claimtrie.getvalue', '@me')
+        self.assertEqual(claimtrie['proof'], nameproof)
+        self.assertEqual(claimtrie['supports'], claim_info['supports'])
+
+        claimbyid = yield self.lbry.stratum_command('blockchain.claimtrie.getclaimbyid', claim_info['claim_id'])
+        claim_address = claimbyid['address']
+        validated_address = yield self.lbrycrd.validateaddress(claim_address)
+        self.assertTrue(validated_address['ismine'])
+        del claimbyid['address']
+        self.assertEqual(claimbyid, claim_info)
+
     def _parse_claim_info(self, claim_info, name, value, sequence=1, depth=0):
         """
         Formats daemon claim data into a claim info as specified in the lbryum stratum API

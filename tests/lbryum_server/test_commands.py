@@ -70,6 +70,20 @@ class CommandsTestCase(IntegrationTestCase):
         self.assertEqual(claimtrie['transaction'], raw_claimtx['hex'])
         self.assertEqual(claimtrie['proof'], nameproof)
         self.assertEqual(claimtrie['supports'], [])
+        # confirmed claim with unconfirmed support
+        supporttxid = yield self.lbrycrd.supportclaim('@me', claim_info['claim_id'], 1.0)
+
+        nameproof = yield self.lbrycrd.getnameproof('@me')
+        claimtrie = yield self.lbry.stratum_command('blockchain.claimtrie.getvalue', '@me')
+        self.assertEqual(claimtrie['proof'], nameproof)
+        self.assertEqual(claimtrie['supports'], [])
+
+        claimbyid = yield self.lbry.stratum_command('blockchain.claimtrie.getclaimbyid', claim_info['claim_id'])
+        claim_address = claimbyid['address']
+        validated_address = yield self.lbrycrd.validateaddress(claim_address)
+        self.assertTrue(validated_address['ismine'])
+        del claimbyid['address']
+        self.assertEqual(claimbyid, claim_info)
 
     def _parse_claim_info(self, claim_info, name, value, sequence=1, depth=0):
         """

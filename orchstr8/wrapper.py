@@ -353,6 +353,12 @@ class Lbrycrd:
         out, error, code = yield self._cli_cmnd('sendtoaddress', address, str(credits))
         defer.returnValue(out.strip())
 
+    @defer.inlineCallbacks
+    def abandonclaim(self, txid, address, amount):
+        """ Returns the transaction id. """
+        out, error, code = yield self._cli_cmnd('abandonclaim', txid, address, str(amount))
+        defer.returnValue(out.strip())
+
     def decoderawtransaction(self, tx):
         return self._cli_cmnd('decoderawtransaction', tx)
 

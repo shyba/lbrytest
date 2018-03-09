@@ -7,7 +7,7 @@ from twisted.internet import defer, task
 
 from lbrynet.core.utils import generate_id
 from lbryschema.claim import ClaimDict
-from lbrytest.wrapper import Lbrycrd
+from orchstr8.wrapper import Lbrycrd
 
 
 class Fixture:

@@ -1,4 +1,4 @@
-from lbrytest.case import IntegrationTestCase
+from orchstr8.case import IntegrationTestCase
 from twisted.internet import defer
 
 

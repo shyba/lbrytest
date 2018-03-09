@@ -2,11 +2,11 @@
 from setuptools import setup
 
 setup(
-    name='lbrytest',
+    name='orchstr8',
     version='0.0.1',
-    url='https://github.com/lbryio/lbrytest',
+    url='https://github.com/lbryio/orchstr8',
     license='MIT',
-    description='Testing library for lbry.',
+    description='Services orchestration and testing library for lbry.',
     author='LBRY Inc.',
     author_email='hello@lbry.io',
     keywords='lbry,unittest',
@@ -27,7 +27,7 @@ setup(
         'Topic :: System :: Distributed Computing',
         'Topic :: Utilities',
     ],
-    packages=['lbrytest'],
+    packages=['orchstr8'],
     install_requires=[
         'requests',
         'twisted'

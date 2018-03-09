@@ -1,6 +1,6 @@
 from twisted.trial import unittest
-from lbrytest.wrapper import LbryServiceStack
-from lbrytest.fixture import Fixture
+from orchstr8.wrapper import LbryServiceStack
+from orchstr8.fixture import Fixture
 
 
 class IntegrationTestCase(unittest.TestCase):

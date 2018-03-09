@@ -1,12 +1,14 @@
 import json
 
+import time
 from lbryschema.claim import ClaimDict
 from lbryschema.schema import SECP256k1
 from lbryschema.signer import get_signer
 from lbryschema.uri import parse_lbry_uri
 
 from lbrytest.case import IntegrationTestCase
-from twisted.internet import defer
+from twisted.internet import defer, threads
+
 """
 Integration tests for lbryum-server using stratum protocol
 TODO: reorganize tests after it becomes clear which fixtures to use and how to better group in scenarios
@@ -140,17 +142,22 @@ class CommandsTestCase(IntegrationTestCase):
         self.maxDiff = None
         uris = ['@one', '@one/two', '@one/twothree', 'four']
         uris = ['lbry://%s'%(uri) for uri in uris]
+        claim_values = {}
         @defer.inlineCallbacks
         def __claim(uri, amount=1):
             name = parse_lbry_uri(uri).name
             secp256k1_private_key = get_signer(SECP256k1).generate().private_key.to_pem()
             claim = ClaimDict.generate_certificate(secp256k1_private_key, curve=SECP256k1)
-            defer.returnValue((yield self.lbrycrd.claimname(name, claim.serialized.encode('hex'), amount))[0].strip())
+            claim_values.setdefault(name, []).append(claim.serialized.encode('hex'))
+            defer.returnValue((yield self.lbrycrd.claimname(name, claim_values[name][-1], amount))[0].strip())
         yield defer.gatherResults([__claim(uri) for uri in uris])
         block_hashes = yield self.lbrycrd.generate(1)
+        while not self.lbry.wallet.network.get_server_height() > 110:
+            yield threads.deferToThread(time.sleep, 0.1)  # TODO: workaround for waiting on server height notification
         # confirmed
         uri_claims = yield self.lbry.stratum_command('blockchain.claimtrie.getvaluesforuris', block_hashes[0], *uris)
         # winning (as all uris were defined)
+        claim_ids = []
         for uri in uris:
             parsed_uri = parse_lbry_uri(uri)
             name = parsed_uri.name
@@ -160,6 +167,37 @@ class CommandsTestCase(IntegrationTestCase):
             claim = current_uri_result[claim_key]
             self.assertEqual('winning', claim['resolution_type'])
             self.assertEqual(claim['result'], claimvalue)
+            claim_ids.append(claim['result']['claim_id'])
+        # uri with claim id
+        uris_with_claim_ids = []
+        for uri, claim_id in zip(uris, claim_ids):
+            parsed_uri = parse_lbry_uri(uri)
+            parsed_uri.claim_id = claim_id
+            uris_with_claim_ids.append(parsed_uri.to_uri_string())
+        args = [block_hashes] + uris_with_claim_ids
+        uri_claims = yield self.lbry.stratum_command('blockchain.claimtrie.getvaluesforuris', *args)
+        for uri in uris_with_claim_ids:
+            parsed_uri = parse_lbry_uri(uri)
+            name = parsed_uri.name
+            claim_info = yield self.lbrycrd.getclaimsforname(name)
+            claim_info = self._parse_claim_info(claim_info, name, claim_values[name][0], claim_id=parsed_uri.claim_id)
+            current_uri_result = uri_claims[uri]
+            claim_key = 'certificate' if parsed_uri.is_channel else 'claim'
+            claim = current_uri_result[claim_key]
+            self.assertEqual('claim_id', claim['resolution_type'])
+            # manually check some varying fields over possible values
+            self.assertIn(claim['result']['claim_sequence'], range(1,4))
+            claim_info['claim_sequence'] = claim['result']['claim_sequence']
+
+            claim_address = claim['result']['address']
+            validated_address = yield self.lbrycrd.validateaddress(claim_address)
+            self.assertTrue(validated_address['ismine'])
+            del claim['result']['address']
+
+            self.assertIn(claim['result']['value'].decode('hex'), claim_values[name])
+            claim_info['value'] = claim['result']['value']
+
+            self.assertEqual(claim['result'], claim_info)
         self.assertEqual(len(uri_claims.keys()), len(uris))
         print(json.dumps(uri_claims, indent=4, sort_keys=True))
         yield __claim(uris[0], 10) # takeover just for the channel claim
@@ -167,11 +205,15 @@ class CommandsTestCase(IntegrationTestCase):
         uri_claims = yield self.lbry.stratum_command('blockchain.claimtrie.getvaluesforuris', block_hashes[-1], *uris)
         print(json.dumps(uri_claims, indent=4, sort_keys=True))
 
-    def _parse_claim_info(self, claim_info, name, value, sequence=1, depth=0):
+    def _parse_claim_info(self, claim_info, name, value, sequence=1, depth=0, claim_id=None):
         """
         Formats daemon claim data into a claim info as specified in the lbryum stratum API
         """
-        claim = claim_info['claims'][0]
+        if not claim_id:
+            claim = claim_info['claims'][0]
+        else:
+            for claim in claim_info['claims']:
+                if claim['claimId'] == claim_id: break
         parsed_supports = [[support['txid'], support['n'], support['nAmount']] for
                               support in claim['supports']]
         return {'claim_sequence': sequence, 'name': name, 'supports': parsed_supports,

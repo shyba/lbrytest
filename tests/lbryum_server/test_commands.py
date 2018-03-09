@@ -1,13 +1,30 @@
 import json
 
+from lbryschema.claim import ClaimDict
+from lbryschema.schema import SECP256k1
+from lbryschema.signer import get_signer
+from lbryschema.uri import parse_lbry_uri
+
 from lbrytest.case import IntegrationTestCase
 from twisted.internet import defer
+"""
+Integration tests for lbryum-server using stratum protocol
+TODO: reorganize tests after it becomes clear which fixtures to use and how to better group in scenarios
+"""
 
 
 class CommandsTestCase(IntegrationTestCase):
 
     @defer.inlineCallbacks
     def test_tx_confirmation_related_commands(self):
+        """
+        Basic stratum commands (from electrum spec)
+            blockchain.address.get_history
+            blockchain.address.get_mempool
+            blockchain.address.get_balance
+            blockchain.address.listunspent
+            blockchain.utxo.get_address
+        """
         address = yield self.wallet.get_least_used_address()
         empty_history = self.lbry.stratum_command('blockchain.address.get_history', address)
         self.assertEqual(empty_history, [])
@@ -41,6 +58,12 @@ class CommandsTestCase(IntegrationTestCase):
 
     @defer.inlineCallbacks
     def test_supported_claim_confirmation(self):
+        """
+        Basic custom commands for LBRY's claimtrie
+            blockchain.claimtrie.getvalue
+            blockchain.claimtrie.getclaimsintx
+            blockchain.claimtrie.getclaimbyid
+        """
         self.maxDiff = None
         # claim on unconfirmed tx
         claimtxid = (yield self.lbrycrd.claimname('@me', 'bebacafe', 0.1))[0].strip()
@@ -71,7 +94,7 @@ class CommandsTestCase(IntegrationTestCase):
         self.assertEqual(claimtrie['proof'], nameproof)
         self.assertEqual(claimtrie['supports'], [])
         # confirmed claim with unconfirmed support
-        supporttxid = yield self.lbrycrd.supportclaim('@me', claim_info['claim_id'], 1.0)
+        yield self.lbrycrd.supportclaim('@me', claim_info['claim_id'], 1.0)
 
         nameproof = yield self.lbrycrd.getnameproof('@me')
         claimtrie = yield self.lbry.stratum_command('blockchain.claimtrie.getvalue', '@me')
@@ -101,6 +124,48 @@ class CommandsTestCase(IntegrationTestCase):
         self.assertTrue(validated_address['ismine'])
         del claimbyid['address']
         self.assertEqual(claimbyid, claim_info)
+
+    @defer.inlineCallbacks
+    def test_uri_batch_resolve_from_simple_to_takeover(self):
+        """
+        Doesn't account for supports. Just signed simple claim and channel claims with subpaths, followed by takeover
+        Target commands:
+            blockchain.claimtrie.getvaluesforuris
+            blockchain.claimtrie.getvalueforuri
+        for easier testing (since commands call each other), we assume the following to be working:
+            (tested on other test cases)
+            blockchain.claimtrie.getvalue
+        TODO: This can be improved by fixtures or formatting data from lbrycrd commands
+        """
+        self.maxDiff = None
+        uris = ['@one', '@one/two', '@one/twothree', 'four']
+        uris = ['lbry://%s'%(uri) for uri in uris]
+        @defer.inlineCallbacks
+        def __claim(uri, amount=1):
+            name = parse_lbry_uri(uri).name
+            secp256k1_private_key = get_signer(SECP256k1).generate().private_key.to_pem()
+            claim = ClaimDict.generate_certificate(secp256k1_private_key, curve=SECP256k1)
+            defer.returnValue((yield self.lbrycrd.claimname(name, claim.serialized.encode('hex'), amount))[0].strip())
+        yield defer.gatherResults([__claim(uri) for uri in uris])
+        block_hashes = yield self.lbrycrd.generate(1)
+        # confirmed
+        uri_claims = yield self.lbry.stratum_command('blockchain.claimtrie.getvaluesforuris', block_hashes[0], *uris)
+        # winning (as all uris were defined)
+        for uri in uris:
+            parsed_uri = parse_lbry_uri(uri)
+            name = parsed_uri.name
+            claimvalue = yield self.lbry.stratum_command('blockchain.claimtrie.getvalue', name, block_hashes[0])
+            current_uri_result = uri_claims[uri]
+            claim_key = 'certificate' if parsed_uri.is_channel else 'claim'
+            claim = current_uri_result[claim_key]
+            self.assertEqual('winning', claim['resolution_type'])
+            self.assertEqual(claim['result'], claimvalue)
+        self.assertEqual(len(uri_claims.keys()), len(uris))
+        print(json.dumps(uri_claims, indent=4, sort_keys=True))
+        yield __claim(uris[0], 10) # takeover just for the channel claim
+        block_hashes = yield self.lbrycrd.generate(10)
+        uri_claims = yield self.lbry.stratum_command('blockchain.claimtrie.getvaluesforuris', block_hashes[-1], *uris)
+        print(json.dumps(uri_claims, indent=4, sort_keys=True))
 
     def _parse_claim_info(self, claim_info, name, value, sequence=1, depth=0):
         """

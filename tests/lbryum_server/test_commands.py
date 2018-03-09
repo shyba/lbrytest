@@ -128,6 +128,44 @@ class CommandsTestCase(IntegrationTestCase):
         self.assertEqual(claimbyid, claim_info)
 
     @defer.inlineCallbacks
+    def test_claim_order(self):
+        self.maxDiff = None
+        txs, block_hashes = [], []
+        for _ in range(5):
+            txs.append((yield self.lbrycrd.claimname('@order_matters', 'bebacafe', 0.1))[0].strip())
+            block_hashes.extend((yield self.lbrycrd.generate(1)))
+        while not self.lbry.wallet.network.get_server_height() == 115:
+            yield threads.deferToThread(time.sleep, 0.1)  # TODO: workaround for waiting on server height notification
+        claim = yield self.lbry.stratum_command('blockchain.claimtrie.getnthclaimforname', '@order_matters', 0)
+        self.assertEqual(claim, {})  # 1 based, so 0 has no results
+        for index in range(1, 6):
+            returned_claim = yield self.lbry.stratum_command('blockchain.claimtrie.getnthclaimforname', '@order_matters', index)
+            daemon_claim_info = yield self.lbrycrd.getclaimsforname('@order_matters')
+
+            self.assertEqual(returned_claim['claim_sequence'], index)
+
+            claim_address = returned_claim['address']
+            validated_address = yield self.lbrycrd.validateaddress(claim_address)
+            self.assertTrue(validated_address['ismine'])
+
+            daemon_claim_info = self._parse_claim_info(daemon_claim_info, '@order_matters', 'bebacafe',
+                                                       depth=(5 - index), claim_id=returned_claim['claim_id'])
+            daemon_claim_info['address'] = claim_address
+            daemon_claim_info['claim_sequence'] = index
+
+            self.assertEqual(daemon_claim_info, returned_claim)
+        yield self.lbrycrd.abandonclaim(txs[3], claim_address, 0.1)  # abandon fourth claim
+        yield self.lbrycrd.generate(1)
+        while not self.lbry.wallet.network.get_server_height() == 116:
+            yield threads.deferToThread(time.sleep, 0.1)  # TODO: workaround for waiting on server height notification
+        no_fifth_claim = yield self.lbry.stratum_command('blockchain.claimtrie.getnthclaimforname', '@order_matters', 5)
+        self.assertEqual(no_fifth_claim, {})
+        fourth_claim = yield self.lbry.stratum_command('blockchain.claimtrie.getnthclaimforname', '@order_matters', 4)
+        self.assertEqual(fourth_claim['claim_sequence'], 4)
+        self.assertEqual(fourth_claim['txid'], txs[4])
+
+
+    @defer.inlineCallbacks
     def test_uri_batch_resolve_from_simple_to_takeover(self):
         """
         Doesn't account for supports. Just signed simple claim and channel claims with subpaths, followed by takeover

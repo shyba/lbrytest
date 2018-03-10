@@ -376,6 +376,14 @@ class Lbrycrd:
             defer.returnValue(json.loads(out))
 
     @defer.inlineCallbacks
+    def getclaimsfortx(self, txid):
+        out, error, code = yield self._cli_cmnd('getclaimsfortx', txid)
+        if error:
+            defer.fail((out, code))
+        else:
+            defer.returnValue(json.loads(out))
+
+    @defer.inlineCallbacks
     def getrawtransaction(self, txid):
         out, error, code = yield self._cli_cmnd('getrawtransaction', txid, '1')
         if error:

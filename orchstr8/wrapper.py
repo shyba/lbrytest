@@ -45,13 +45,13 @@ class LbryServiceStack:
             # lbry.start() will never return unless there
             # are some blocks generated first
             yield self.lbrycrd.generate(110)
-        self.lbryumserver.start()
+        yield self.lbryumserver.start()
         yield self.lbry.start()
 
     @defer.inlineCallbacks
     def shutdown(self, cleanup=True):
         try:
-            yield self.lbry.stop()
+            yield self.lbry.stop(cleanup=cleanup)
         except Exception as e:
             print(e)
 
@@ -61,7 +61,7 @@ class LbryServiceStack:
             print(e)
 
         try:
-            yield self.lbryumserver.stop()
+            yield self.lbryumserver.stop(cleanup=cleanup)
         except Exception as e:
             print(e)
 
@@ -78,13 +78,17 @@ class MocAnalyticsManager:
     def shutdown(self):
         pass
 
+    def send_claim_action(self, action):
+        pass
+
 
 class Lbry:
 
     def __init__(self, verbose=False):
         self.verbose = verbose
         self.data_path = None
-        self.download_path = None
+        self.wallet_directory = None
+        self.download_directory = None
         self.server = LbryDaemonServer(MocAnalyticsManager())
 
     @property
@@ -103,20 +107,20 @@ class Lbry:
     def start(self):
         self.data_path = tempfile.mkdtemp()
 
-        wallet_directory = os.path.join(self.data_path, 'lbryum')
-        download_directory = os.path.join(self.data_path, 'Downloads')
+        self.wallet_directory = os.path.join(self.data_path, 'lbryum')
+        self.download_directory = os.path.join(self.data_path, 'Downloads')
 
-        os.mkdir(wallet_directory)
-        os.mkdir(download_directory)
+        os.mkdir(self.wallet_directory)
+        os.mkdir(self.download_directory)
 
-        with open(os.path.join(wallet_directory, 'regtest_headers'), 'w'):
+        with open(os.path.join(self.wallet_directory, 'regtest_headers'), 'w'):
             pass
 
         lbry_conf.settings = None
         lbry_conf.initialize_settings(load_conf_file=False)
         lbry_conf.settings['data_dir'] = os.path.join(self.data_path, 'lbrynet')
-        lbry_conf.settings['lbryum_wallet_dir'] = wallet_directory
-        lbry_conf.settings['download_directory'] = download_directory
+        lbry_conf.settings['lbryum_wallet_dir'] = self.wallet_directory
+        lbry_conf.settings['download_directory'] = self.download_directory
         lbry_conf.settings['use_upnp'] = False
         lbry_conf.settings['blockchain_name'] = 'lbrycrd_regtest'
         lbry_conf.settings['lbryum_servers'] = [('localhost', 50001)]
@@ -126,10 +130,17 @@ class Lbry:
         return self.server.start(use_auth=False)
 
     @defer.inlineCallbacks
-    def stop(self):
-        yield self.daemon.exchange_rate_manager.stop()
-        yield self.daemon._shutdown()
-        yield self.server.server_port.stopListening()
+    def stop(self, cleanup=True):
+        try:
+            yield self.daemon.exchange_rate_manager.stop()
+            yield self.daemon._shutdown()
+            yield self.server.server_port.stopListening()
+        finally:
+            if cleanup:
+                self.cleanup()
+
+    def cleanup(self):
+        shutil.rmtree(self.data_path, ignore_errors=True)
 
 
 class LbryumServer:
@@ -172,11 +183,15 @@ class LbryumServer:
 
     @defer.inlineCallbacks
     def stop(self, cleanup=True):
-        stop_server()
-        yield self.transports[0].stopped
-        if cleanup:
-            shutil.rmtree(self.data_path, ignore_errors=True)
-        defer.returnValue(True)
+        try:
+            stop_server()
+            yield self.transports[0].stopped
+        finally:
+            if cleanup:
+                self.cleanup()
+
+    def cleanup(self):
+        shutil.rmtree(self.data_path, ignore_errors=True)
 
 
 class LbrycrdProcess(ProcessProtocol):

@@ -151,10 +151,10 @@ class CommandsTestCase(IntegrationTestCase):
     @defer.inlineCallbacks
     def test_claim_order(self):
         self.maxDiff = None
-        txs, block_hashes = [], []
+        txs = []
         for _ in range(5):
             txs.append((yield self.lbrycrd.claimname('@order_matters', 'bebacafe', 0.1))[0].strip())
-            block_hashes.extend((yield self.lbrycrd.generate(1)))
+            yield self.lbrycrd.generate(1)
         while not self.lbry.wallet.network.get_server_height() == 115:
             yield threads.deferToThread(time.sleep, 0.1)  # TODO: workaround for waiting on server height notification
         claim = yield self.lbry.stratum_command('blockchain.claimtrie.getnthclaimforname', '@order_matters', 0)
@@ -302,7 +302,27 @@ class CommandsTestCase(IntegrationTestCase):
             claim_info['value'] = claim['result']['value']
 
             self.assertEqual(claim['result'], claim_info)
-        self.assertEqual(len(uri_claims.keys()), len(uris))
+        # uri with sequence
+        uris_with_sequence = []
+        for uri, sequence in zip(uris[0:3], range(1, 4)):
+            parsed_uri = parse_lbry_uri(uri)
+            parsed_uri.claim_sequence = sequence
+            uris_with_sequence.append(parsed_uri.to_uri_string())
+        uris_with_sequence.append(uris[-1]+':1')
+        args = [block_hashes] + uris_with_sequence
+        uri_claims = yield self.lbry.stratum_command('blockchain.claimtrie.getvaluesforuris', *args)
+        for uri in uris_with_sequence:
+            parsed_uri = parse_lbry_uri(uri)
+            name = parsed_uri.name
+            sequence = parsed_uri.claim_sequence
+            current_uri_result = uri_claims[uri]
+
+            claim_info = yield self.lbry.stratum_command('blockchain.claimtrie.getnthclaimforname', name, sequence)
+            claim_key = 'certificate' if parsed_uri.is_channel else 'claim'
+            resolved_claim = current_uri_result[claim_key]
+            self.assertEqual('sequence', resolved_claim['resolution_type'])
+
+            self.assertEqual(resolved_claim['result'], claim_info)
         print(json.dumps(uri_claims, indent=4, sort_keys=True))
         yield __claim(uris[0], 10) # takeover just for the channel claim
         block_hashes = yield self.lbrycrd.generate(10)

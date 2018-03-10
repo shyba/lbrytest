@@ -7,7 +7,7 @@ from lbryschema.schema import SECP256k1
 from lbryschema.signer import get_signer
 from lbryschema.uri import parse_lbry_uri
 
-from lbrytest.case import IntegrationTestCase
+from orchstr8.case import IntegrationTestCase
 from twisted.internet import defer, threads
 
 """

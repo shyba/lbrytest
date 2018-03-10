@@ -2,6 +2,7 @@ import json
 
 import time
 from lbryschema.claim import ClaimDict
+from lbryschema.decode import smart_decode
 from lbryschema.schema import SECP256k1
 from lbryschema.signer import get_signer
 from lbryschema.uri import parse_lbry_uri
@@ -184,6 +185,51 @@ class CommandsTestCase(IntegrationTestCase):
         self.assertEqual(fourth_claim['claim_sequence'], 4)
         self.assertEqual(fourth_claim['txid'], txs[4])
 
+    @defer.inlineCallbacks
+    def test_signed_claim_order(self):
+        self.maxDiff = None
+        private_key = get_signer(SECP256k1).generate().private_key.to_pem()
+        certificate = ClaimDict.generate_certificate(private_key, curve=SECP256k1)
+        value = certificate.serialized.encode('hex')
+        yield self.lbrycrd.claimname('@ordermatters', value, 0.1)
+        yield self.lbrycrd.generate(1)
+        while self.lbry.wallet.network.get_server_height() < 111:
+            yield threads.deferToThread(time.sleep, 0.1)  # TODO: workaround for waiting on server height notification
+
+        cert_claim = (yield self.lbry.stratum_command('blockchain.claimtrie.getclaimsforname', '@ordermatters'))
+        cert_claim = cert_claim['claims'][0]
+        signed_claims = []
+        for _ in range(5):
+            decoded_claim = smart_decode(test_claim_dict)
+            signed = decoded_claim.sign(private_key, cert_claim['address'], cert_claim['claim_id'], curve=SECP256k1)
+            value = signed.serialized.encode('hex')
+            txid = (yield self.lbrycrd.claimname('@ordermatters', value, 0.1))[0].strip()
+            yield self.lbrycrd.generate(1)
+            claimed_id = (yield self.lbrycrd.getclaimsfortx(txid))[0]['claimId']
+            signed_claims.append(claimed_id)
+        while self.lbry.wallet.network.get_server_height() < 115:
+            yield threads.deferToThread(time.sleep, 0.1)  # TODO: workaround for waiting on server height notification
+
+        claim = yield self.lbry.stratum_command('blockchain.claimtrie.getclaimssignedbynthtoname', '@ordermatters', 0)
+        self.assertFalse(claim)  # 1 based, so 0 has no results
+
+        stratum_args = ('blockchain.claimtrie.getclaimssignedby', '@ordermatters')
+        returned_claims = yield self.lbry.stratum_command(*stratum_args)
+        self.assertEqual(len(returned_claims), 5)
+        sequence = [claim['claim_sequence'] for claim in returned_claims]
+        self.assertEqual(sequence, range(2, 7))
+
+        stratum_args = ('blockchain.claimtrie.getclaimssignedbyid', cert_claim['claim_id'])
+        returned_claims = yield self.lbry.stratum_command(*stratum_args)
+        self.assertEqual(len(returned_claims), 5)
+        sequence = [claim['claim_sequence'] for claim in returned_claims]
+        self.assertEqual(sequence, range(2, 7))
+
+        stratum_args = ('blockchain.claimtrie.getclaimssignedbynthtoname', '@ordermatters', 1)
+        returned_claims = yield self.lbry.stratum_command(*stratum_args)
+        self.assertEqual(len(returned_claims), 5)
+        sequence = [claim['claim_sequence'] for claim in returned_claims]
+        self.assertEqual(sequence, range(2, 7))
 
     @defer.inlineCallbacks
     def test_uri_batch_resolve_from_simple_to_takeover(self):
